@@ -1,7 +1,7 @@
 package io.jzheaux.springsecurity.resolutions;
 
 import java.util.Collection;
-import java.util.stream.Collectors;
+import java.util.HashSet;
 
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -19,20 +19,33 @@ public class UserRepositoryUserDetailsService implements UserDetailsService {
 
 	@Override
 	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-		return this.userRepository.findByUsername(username).map(BridgeUser::new)
+		return this.userRepository.findByUsername(username).map(this::map)
 				.orElseThrow(() -> new UsernameNotFoundException("No user found with name: " + username));
 	}
 
-	private static class BridgeUser extends User implements UserDetails {
+	private BridgeUser map(User user) {
+		Collection<GrantedAuthority> authorities = new HashSet<GrantedAuthority>();
+		for (UserAuthority userAuthority : user.getUserAuthorities()) {
+			if (userAuthority.getAuthority().equals("ROLE_ADMIN")) {
+				authorities.add(new SimpleGrantedAuthority("resolution:read"));
+				authorities.add(new SimpleGrantedAuthority("resolution:write"));
+			}
+			authorities.add(new SimpleGrantedAuthority(userAuthority.getAuthority()));
+		}
+		return new BridgeUser(user, authorities);
+	}
 
-		BridgeUser(User user) {
+	private static class BridgeUser extends User implements UserDetails {
+		private Collection<GrantedAuthority> authorities;
+
+		BridgeUser(User user, Collection<GrantedAuthority> authorities) {
 			super(user);
+			this.authorities = authorities;
 		}
 
 		@Override
 		public Collection<? extends GrantedAuthority> getAuthorities() {
-			return getUserAuthorities().stream().map(UserAuthority::getAuthority).map(SimpleGrantedAuthority::new)
-					.collect(Collectors.toList());
+			return this.authorities;
 		}
 
 		@Override
@@ -54,6 +67,5 @@ public class UserRepositoryUserDetailsService implements UserDetailsService {
 		public boolean isEnabled() {
 			return this.getEnabled();
 		}
-
 	}
 }
